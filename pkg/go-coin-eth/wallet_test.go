@@ -1,8 +1,8 @@
 package go_coin_eth
 
 import (
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pefish/go-test-assert"
 	"log"
 	"math/big"
 	"testing"
@@ -24,5 +24,7 @@ func TestContract_CallMethod(t *testing.T) {
 	tx, err := wallet.CallMethod("", contractAddress, abiStr,"transfer", &CallMethodOpts{
 		GasPrice: "1000000000",
 	}, common.HexToAddress("0x2117210296c2993Cfb4c6790FEa1bEB3ECe8Ac06"), big.NewInt(1000000000000000000))
-	fmt.Println(tx, err)
+	test.Equal(t, true, tx == nil)
+	test.Equal(t, true, err != nil)
+	test.Equal(t, "invalid length, need 256 bits", err.Error())
 }
