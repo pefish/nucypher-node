@@ -15,7 +15,7 @@ go get github.com/pefish/nucypher-node/cmd/nucypher-node
 ## Quick start
 
 ```shell script
-nucypher-node --server-url=https://mainnet.infura.io/v3/9442f24048d94dbd9a588d3e4e2eac8b
+nucypher-node --server-url=https://mainnet.infura.io/v3/9442f24048d94dbd9a588d3e4e2eac8b --pkey=xxx 
 ```
 
 ## Document
