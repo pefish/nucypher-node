@@ -35,6 +35,7 @@ func (dc *DefaultCommand) DecorateFlagSet(flagSet *flag.FlagSet) error {
 	flagSet.String("server-url", "", "geth server url")
 	flagSet.String("interval", "30", "interval time of minutes")
 	flagSet.String("staker-address", "0x476fBB25d56B5dD4f1df03165498C403C4713069", "staker address")
+	flagSet.Bool("rewrite-tx", false, "rewrite tx in cache")
 	return nil
 }
 
@@ -109,6 +110,10 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 	if err != nil {
 		return err
 	}
+	isRewriteTx, err := go_config.Config.GetBool("rewrite-tx")
+	if err != nil {
+		return err
+	}
 
 	fsStat, err := os.Stat(data.DataDir)
 	if err != nil {
@@ -174,7 +179,10 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				pendedDuration := time.Duration(time.Now().UnixNano() - dc.cache.StartTime)
 				gasPrice := dc.cache.GasPrice
 				go_logger.Logger.InfoF("cache sendedTx is pending, pended time: %f 分钟", pendedDuration.Minutes())
-				if pendedDuration > 7 * time.Hour {
+				if isRewriteTx {
+					gasPrice = go_decimal.Decimal.Start(gasPrice).MultiForString(1.5) // 提高一半
+					isRewriteTx = false
+				} else if pendedDuration > 7 * time.Hour {
 					gasPrice = go_decimal.Decimal.Start(gasPrice).MultiForString(1.5) // 提高一半
 				} else if time.Now().UTC().Hour() == 22 {
 					gasPrice = ""
@@ -222,7 +230,8 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 			GasPrice: gasPriceWei,
 		})
 		if err != nil {
-			return err
+			go_logger.Logger.Error(err)
+			goto continueTimer
 		}
 		dc.cache.Period = currentPeriod
 		dc.cache.TxHash = sendedTx.Hash().String()
