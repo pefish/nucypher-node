@@ -34,6 +34,7 @@ func NewDefaultCommand() *DefaultCommand {
 func (dc *DefaultCommand) DecorateFlagSet(flagSet *flag.FlagSet) error {
 	flagSet.String("pkey", "", "private key of your worker address")
 	flagSet.String("gas-price", "15", "your accepted gas price")
+	flagSet.String("max-gas-price", "100", "max gas price")
 	flagSet.String("server-url", "", "geth server url")
 	flagSet.String("interval", "30", "interval time of minutes")
 	flagSet.String("staker-address", "0x476fBB25d56B5dD4f1df03165498C403C4713069", "staker address")
@@ -131,6 +132,15 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 	if err != nil {
 		return err
 	}
+	maxGasPrice, err := go_config.Config.GetString("max-gas-price")
+	if err != nil {
+		return err
+	}
+	maxGasPriceWeiTemp, err := go_decimal.Decimal.Start(maxGasPrice).ShiftedBy(9)
+	if err != nil {
+		return err
+	}
+	maxGasPriceWei := maxGasPriceWeiTemp.EndForString()
 
 	fsStat, err := os.Stat(data.DataDir)
 	if err != nil {
@@ -194,29 +204,37 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 			}
 			if isPending || notFound { // 每7小时提高一半，截止时间 22点
 				pendedDuration := time.Duration(time.Now().UnixNano() - dc.cache.StartTime)
-				gasPrice := dc.cache.GasPrice
+				gasPriceWei := dc.cache.GasPrice
 				go_logger.Logger.InfoF("cache sendedTx is pending, pended time: %f 分钟", pendedDuration.Minutes())
-				if isRewriteTx {
-					gasPrice = go_decimal.Decimal.Start(gasPrice).MultiForString(1.5) // 提高一半
+				nextGasPriceWei := go_decimal.Decimal.Start(gasPriceWei).MultiForString(1.5)
+				isGasPriceMax := go_decimal.Decimal.Start(nextGasPriceWei).Gte(maxGasPriceWei)
+				if isGasPriceMax {
+					go_logger.Logger.InfoF("再提高就达到最大的gas price了。nextGasPriceWei: %s", nextGasPriceWei)
+				}
+				if isRewriteTx && !isGasPriceMax {
+					gasPriceWei = nextGasPriceWei
 					isRewriteTx = false
-				} else if pendedDuration > 7 * time.Hour {
-					gasPrice = go_decimal.Decimal.Start(gasPrice).MultiForString(1.5) // 提高一半
-				} else if time.Now().UTC().Hour() == 22 {
-					gasPrice = ""
+				} else if pendedDuration > 7 * time.Hour && !isGasPriceMax {
+					gasPriceWei = nextGasPriceWei
+				} else if time.Now().UTC().Hour() == 22 && !isGasPriceMax {
+					gasPriceWei = ""
 				} else {
 					if dc.cache.TxHex != "" {
 						// 交易再发一遍
 						err = wallet.SendRawTransaction(dc.cache.TxHex)
 						if err != nil {
 							go_logger.Logger.Error(err)
+						} else {
+							go_logger.Logger.InfoF("%s 重新广播成功", dc.cache.TxHash)
 						}
 					}
 					goto continueTimer
 				}
-				go_logger.Logger.InfoF("使用更高gasprice覆盖交易，gasprice: %s", gasPrice)
+
+				go_logger.Logger.InfoF("使用更高gas price覆盖交易，old gas price: %s", gasPriceWei)
 				sendedTx, err = wallet.CallMethod(pkey, contractAddress, abiStr, "commitToNextPeriod", &go_coin_eth.CallMethodOpts{
-					Nonce: dc.cache.Nonce,
-					GasPrice: gasPrice,
+					Nonce:    dc.cache.Nonce,
+					GasPrice: gasPriceWei,
 				})
 				if err != nil {
 					return err
