@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/ethereum/go-ethereum v1.9.24
-	github.com/pefish/go-coin-eth v0.0.4
+	github.com/pefish/go-coin-eth v0.0.7
 	github.com/pefish/go-commander v0.3.0
 	github.com/pefish/go-config v0.2.1
 	github.com/pefish/go-decimal v0.2.2

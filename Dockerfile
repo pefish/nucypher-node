@@ -12,4 +12,4 @@ ENV GO_CONFIG /app/config/pom.yaml
 ENV GO_SECRET /app/secret/pom.yaml
 CMD ["/app/bin/main", "--help"]
 
-# docker build -t pefish/nucypher-node:v0.0.15 .
+# docker build -t pefish/nucypher-node:v0.0.16 .

@@ -92,6 +92,10 @@ func (dc *DefaultCommand) updateCache(period string, sendedTx *types.Transaction
 	return nil
 }
 
+func (dc *DefaultCommand) clearCache() {
+	dc.cache = Data{}
+}
+
 func (dc *DefaultCommand) Start(data commander.StartData) error {
 	stakerAddress, err := go_config.Config.GetString("staker-address")
 	if err != nil {
@@ -223,7 +227,11 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 						// 交易再发一遍
 						err = wallet.SendRawTransaction(dc.cache.TxHex)
 						if err != nil {
-							go_logger.Logger.Error(err)
+							go_logger.Logger.ErrorF("广播失败 %#v", err)
+							if err.Error() == "nonce too low" {
+								go_logger.Logger.InfoF("%s，清空cache", err.Error())
+								dc.clearCache()
+							}
 						} else {
 							go_logger.Logger.InfoF("%s 重新广播成功", dc.cache.TxHash)
 						}
@@ -231,7 +239,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 					goto continueTimer
 				}
 
-				go_logger.Logger.InfoF("使用更高gas price覆盖交易，old gas price: %s", gasPriceWei)
+				go_logger.Logger.InfoF("使用更高gas price覆盖交易 %s，old gas price: %s", dc.cache.TxHash, dc.cache.GasPrice)
 				sendedTx, err = wallet.CallMethod(pkey, contractAddress, abiStr, "commitToNextPeriod", &go_coin_eth.CallMethodOpts{
 					Nonce:    dc.cache.Nonce,
 					GasPrice: gasPriceWei,
@@ -247,7 +255,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				goto continueTimer
 			}
 			// 已经确认了，清空cache
-			dc.cache = Data{}
+			dc.clearCache()
 			go_logger.Logger.Info("sendedTx confirmed today")
 			goto continueTimer
 		}
