@@ -96,6 +96,25 @@ func (dc *DefaultCommand) clearCache() {
 	dc.cache = Data{}
 }
 
+func (dc *DefaultCommand) commitToNextPeriod(wallet *go_coin_eth.Wallet, pkey string, gasPriceWei string, currentPeriod string, callMethodOpts *go_coin_eth.CallMethodOpts) error {
+	go_logger.Logger.Info("开始发送交易")
+	buildCallMethodTxResult, err := wallet.BuildCallMethodTx(pkey, contractAddress, abiStr, "commitToNextPeriod", callMethodOpts)
+	if err != nil {
+		return err
+	}
+	go_logger.Logger.Info("构建交易成功")
+	err = wallet.SendRawTransaction(buildCallMethodTxResult.TxHex)
+	if err != nil {
+		return err
+	}
+	err = dc.updateCache(currentPeriod, buildCallMethodTxResult.SignedTx)
+	if err != nil {
+		return err
+	}
+	go_logger.Logger.InfoF("交易发送成功。txid: %s", dc.cache.TxHash)
+	return nil
+}
+
 func (dc *DefaultCommand) Start(data commander.StartData) error {
 	stakerAddress, err := go_config.Config.GetString("staker-address")
 	if err != nil {
@@ -182,13 +201,11 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for range timer.C {
-		var getCurrentPeriodResult []interface{}
 		var currentPeriod string
 		var nextPeriod string
 		var stakerInfoResult []interface{}
-		var sendedTx *types.Transaction
 
-		getCurrentPeriodResult, err = wallet.CallContractConstant(contractAddress, abiStr,"getCurrentPeriod",  nil)
+		getCurrentPeriodResult, err := wallet.CallContractConstant(contractAddress, abiStr,"getCurrentPeriod",  nil)
 		if err != nil {
 			return err
 		}
@@ -240,18 +257,16 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				}
 
 				go_logger.Logger.InfoF("使用更高gas price覆盖交易 %s，old gas price: %s", dc.cache.TxHash, dc.cache.GasPrice)
-				sendedTx, err = wallet.CallMethod(pkey, contractAddress, abiStr, "commitToNextPeriod", &go_coin_eth.CallMethodOpts{
-					Nonce:    dc.cache.Nonce,
+
+				err = dc.commitToNextPeriod(wallet, pkey, gasPriceWei, currentPeriod, &go_coin_eth.CallMethodOpts{
 					GasPrice: gasPriceWei,
+					Nonce: dc.cache.Nonce,
 				})
 				if err != nil {
-					return err
+					go_logger.Logger.Error(err)
+					goto continueTimer
 				}
-				err = dc.updateCache(currentPeriod, sendedTx)
-				if err != nil {
-					return err
-				}
-				go_logger.Logger.InfoF("交易发送成功。txid: %s", dc.cache.TxHash)
+
 				goto continueTimer
 			}
 			// 已经确认了，清空cache
@@ -274,19 +289,13 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 		}
 
 		// 使用指定的price发送一笔交易
-		go_logger.Logger.Info("开始发送交易")
-		sendedTx, err = wallet.CallMethod(pkey, contractAddress, abiStr, "commitToNextPeriod", &go_coin_eth.CallMethodOpts{
+		err = dc.commitToNextPeriod(wallet, pkey, gasPriceWei, currentPeriod, &go_coin_eth.CallMethodOpts{
 			GasPrice: gasPriceWei,
 		})
 		if err != nil {
 			go_logger.Logger.Error(err)
 			goto continueTimer
 		}
-		err = dc.updateCache(currentPeriod, sendedTx)
-		if err != nil {
-			return err
-		}
-		go_logger.Logger.InfoF("交易发送成功。txid: %s", dc.cache.TxHash)
 	continueTimer:
 		timer.Reset(time.Duration(interval) * time.Minute)
 		continue
