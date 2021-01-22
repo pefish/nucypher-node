@@ -1,7 +1,6 @@
 package command
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"github.com/ethereum/go-ethereum/common"
@@ -193,7 +192,10 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 	}
 	go_logger.Logger.InfoF("last info: %v", dc.cache)
 
-	wallet, err := go_coin_eth.NewWallet(serverUrl)
+	wallet, err := go_coin_eth.NewWallet(go_coin_eth.UrlParam{
+		RpcUrl: serverUrl,
+		WsUrl:  "",
+	})
 	if err != nil {
 		return err
 	}
@@ -213,8 +215,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 		go_logger.Logger.InfoF("currentPeriod: %s", currentPeriod)
 
 		if dc.cache.Period != "" {  // 说明今天的已经发了
-			ctx, _ := context.WithTimeout(context.Background(), 30 * time.Second)
-			_, isPending, err := wallet.RemoteClient.TransactionByHash(ctx, common.HexToHash(dc.cache.TxHash))  // 未确认交易太久后会找不到了
+			_, isPending, err := wallet.TransactionByHash(dc.cache.TxHash)  // 未确认交易太久后会找不到了
 			notFound := false
 			if err != nil {
 				notFound = strings.Contains(err.Error(), "not found")
@@ -237,8 +238,16 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 					isRewriteTx = false
 				} else if pendedDuration > 7 * time.Hour && !isGasPriceMax {
 					gasPriceWei = nextGasPriceWei
-				} else if time.Now().UTC().Hour() == 22 && !isGasPriceMax {
-					gasPriceWei = ""
+				} else if time.Now().UTC().Hour() == 23 && !isGasPriceMax {
+					gasPriceWei, err = wallet.SuggestGasPrice()
+					if err != nil {
+						go_logger.Logger.Error(err)
+						goto continueTimer
+					}
+					if go_decimal.Decimal.Start(gasPriceWei).Gte(maxGasPriceWei) {
+						go_logger.Logger.Info("评估的 gasPrice 超过了设置的 gasPrice，跳过")
+						goto continueTimer
+					}
 				} else {
 					if dc.cache.TxHex != "" {
 						// 交易再发一遍
@@ -261,6 +270,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				err = dc.commitToNextPeriod(wallet, pkey, gasPriceWei, currentPeriod, &go_coin_eth.CallMethodOpts{
 					GasPrice: gasPriceWei,
 					Nonce: dc.cache.Nonce,
+					GasLimit: 300000,
 				})
 				if err != nil {
 					go_logger.Logger.Error(err)
@@ -291,6 +301,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 		// 使用指定的price发送一笔交易
 		err = dc.commitToNextPeriod(wallet, pkey, gasPriceWei, currentPeriod, &go_coin_eth.CallMethodOpts{
 			GasPrice: gasPriceWei,
+			GasLimit: 300000,
 		})
 		if err != nil {
 			go_logger.Logger.Error(err)
