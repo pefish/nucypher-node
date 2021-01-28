@@ -228,7 +228,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				pendedDuration := time.Duration(time.Now().UnixNano() - dc.cache.StartTime)
 				gasPriceWei := dc.cache.GasPrice
 				go_logger.Logger.InfoF("cache sendedTx is pending, pended time: %f 分钟", pendedDuration.Minutes())
-				nextGasPriceWei := go_decimal.Decimal.Start(gasPriceWei).MultiForString(1.5)
+				nextGasPriceWei := go_decimal.Decimal.Start(gasPriceWei).MultiForString(1.3)
 				isGasPriceMax := go_decimal.Decimal.Start(nextGasPriceWei).Gte(maxGasPriceWei)
 				if isGasPriceMax {
 					go_logger.Logger.InfoF("再提高就达到最大的gas price了。nextGasPriceWei: %s", nextGasPriceWei)
@@ -236,7 +236,7 @@ func (dc *DefaultCommand) Start(data commander.StartData) error {
 				if isRewriteTx && !isGasPriceMax {
 					gasPriceWei = nextGasPriceWei
 					isRewriteTx = false
-				} else if pendedDuration > 7 * time.Hour && !isGasPriceMax {
+				} else if pendedDuration > 5 * time.Hour && !isGasPriceMax {
 					gasPriceWei = nextGasPriceWei
 				} else if time.Now().UTC().Hour() == 23 && !isGasPriceMax {
 					gasPriceWei, err = wallet.SuggestGasPrice()
